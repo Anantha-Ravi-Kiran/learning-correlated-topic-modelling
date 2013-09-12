@@ -1,0 +1,57 @@
+
+### Importing Documents ###
+
+The evaluator code requires that documents be in Mallet format. You can import them using the usual methods described in the online documentation.
+
+This format includes a mapping from integers to strings. It may be useful to specify this "data alphabet" when you import documents, so I've included a tool "ExistingAlphabetImporter" that uses a predefined vocabulary.
+
+Here's an example:
+
+## a sample file
+[mimno@wash java]$ cat ../anchor/test.in
+X       X       president game recipe stock zzz_wyoming
+
+## import without a vocab
+[mimno@wash java]$ bin/run ExistingAlphabetImporter --input ../anchor/test.in --output ../anchor/test.mallet
+[mimno@wash java]$ bin/mallet run cc.mallet.classify.tui.Vectors2Info --input ../anchor/test.mallet --print-features
+president
+game
+recipe
+stock
+zzz_wyoming
+
+## now import, specifying a vocabulary
+[mimno@wash java]$ bin/run ExistingAlphabetImporter --input ../anchor/test.in --output ../anchor/test.mallet --vocab ../anchor/vocab_trunc.nytimes.txt
+[mimno@wash java]$ bin/mallet run cc.mallet.classify.tui.Vectors2Info --input ../anchor/test.mallet --print-features | head
+aback
+abandon
+abandoned
+abandoning
+
+
+### Evaluating Held-Out Probability ###
+
+The evaluator takes a documents file in mallet format and *one or more* gzipped files containing topic-word probabilities. The code will read each of these models in turn and create a file with heldout probability results for each one.
+
+For example, if the topics file is topics-1.txt.gz, you will see a file called topics-1.txt.gz.heldout.
+
+The format for topic-word probabilities is one line per word in the vocabulary, with each line consisting of tab-separated fields. Each field is of the form "[topic]:[weight]". These weights do not need to be normalized. For example, if the first word has weight 8.3 in topic 10, 1.8 in topic 97, and 0.003 in topic 7, you would see:
+
+10:8.3	   97:1.8	7:0.003
+
+The format for specifying hyperparameters is one row per topic. Use the option --parameters [file] to specify the name of this file.
+
+To specify 0.3 for everything, the file would look like:
+
+0.3
+0.3
+0.3
+...
+
+Use the option --beta to specify smoothing on the topic-word weights, which may be 0.0 if weights are already smoothed.
+
+Example:
+
+bin/run topics.LDAHeldOut --instances test.mallet --num-topics 50 --parameters alpha.txt --topics-files topics.txt.gz --beta 0.01 --doc-limit 100
+
+Use the --help option for a complete list of command line options.

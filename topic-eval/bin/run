@@ -1,0 +1,16 @@
+#!/bin/sh
+
+MALLET_JAVA_HOME=./topic-eval
+CLASSPATH=$MALLET_JAVA_HOME/lib/mallet.jar:$MALLET_JAVA_HOME/lib/mallet-deps.jar:$MALLET_JAVA_HOME/class
+
+MEMORY=2048m
+
+VERBOSE=
+#VERBOSE=-verbose:gc
+
+JAVA_COMMAND="java $VERBOSE -Xmx$MEMORY -ea -Djava.awt.headless=true -server -cp $CLASSPATH -Dfile.encoding=UTF-8 -Djava.util.logging.config.file=$MALLET_JAVA_HOME/logging.properties" 
+
+# consume the first argument
+CLASS=edu.princeton.cs.mimno.$1
+shift
+$JAVA_COMMAND $CLASS $*

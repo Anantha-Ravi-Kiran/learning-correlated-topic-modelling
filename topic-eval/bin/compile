@@ -1,0 +1,17 @@
+#!/bin/sh
+
+WORKING_DIR=$(dirname $0)
+cd $WORKING_DIR/../
+MALLET_JAVA_HOME=`pwd`
+CLASSPATH=$MALLET_JAVA_HOME/lib/mallet.jar:$MALLET_JAVA_HOME/lib/mallet-deps.jar:$MALLET_JAVA_HOME/src
+
+JAVA_COMPILE_CMD="javac -cp $CLASSPATH "
+
+SRC=$MALLET_JAVA_HOME/src/edu/princeton/cs/mimno
+OUTPUT_PATH=$MALLET_JAVA_HOME/class
+
+
+cd ${SRC}
+$JAVA_COMPILE_CMD ExistingAlphabetImporter.java -d $OUTPUT_PATH
+cd ${SRC}/topics/
+$JAVA_COMPILE_CMD *.java -d $OUTPUT_PATH
