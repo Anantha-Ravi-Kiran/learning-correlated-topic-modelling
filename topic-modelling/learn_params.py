@@ -1,4 +1,5 @@
 from __future__ import division
+import IPython
 from itertools import groupby
 from scipy.sparse import *
 from scipy import *
@@ -89,7 +90,7 @@ while (max_procs > 0):
 	i = i+docs_per_proc+(left_docs>0)
 	left_docs -= 1        
 	max_procs -= 1
-doc_list = np.array(doc_list)
+#doc_list = np.array(doc_list)
 
 # Collecting words in each document for multiprocessing efficiently 
 word_list = []
@@ -100,15 +101,18 @@ for docs in doc_list:
 		end = input_docs.indptr[doc_index + 1]
 		word_indices = input_docs.indices[start:end]
 		word_doc.append(word_indices)    
-	word_list.append(np.array(word_doc))
-word_list = np.array(word_list)
+	word_list.append(word_doc)
+	#word_list.append(np.array(word_doc))
+#word_list = np.array(word_list) #YONI COMMENTED OUT HERE
 
 # Writting the report to the output - bufsize = 0 for unbuffering.
 out_file_name = "%s_%d.html" %(output_file,no_of_topics)
 out_alpha = "%s/%s_%d.txt" %(dirname,"alpha",no_of_topics)
+out_pi = "%s/%s_%d.txt" %(dirname,"pi",no_of_topics)
 
 f = open(out_file_name,'w')
 f_alpha = open(out_alpha,'w')
+f_pi = open(out_pi, 'w')
 
 #for K in range(1,int(no_of_topics/5) + 1):
 for K in range(5,6):    
@@ -124,11 +128,15 @@ for K in range(5,6):
 		Pi, alpha = em.Maximization(p_md,E_log_theta,alpha)
 		p_md,E_log_theta = em.Expectation(alpha, Pi, A, word_list, doc_list,vocabSize,numdocs)
 		
-		# Write alpha out for likelihood computation
+		# Write alpha and pi out for likelihood computation
 		for m in range(K):
 			for topics in range(no_of_topics):	
 				f_alpha.write("%f\t"%(alpha[m,topics]))
 			f_alpha.write("\n")
+
+		for p in Pi:
+			print p
+			f_pi.write("%f\n"%p)
 
 	# Print Top topics corresponding to the learned alphas    
 	top_index = em.pick_top_index(alpha,5)
@@ -142,14 +150,17 @@ for K in range(5,6):
 	print(Pi)
 
 	ht = ch.create_html_report(topwords,top_index,Pi)
-	print(ht,file=f)
+	#print(ht,file=f)
+	print >>f, ht
 
 	# For flushing the buffers after every iterations
 	f.close()
 	f_alpha.close()
 	f = open(out_file_name,'a')
-	f_alpha = open(out_file_name,'a')
+	f_alpha = open(out_alpha,'a')
+	f_pi = open(out_pi, 'a')
 
 
 f.close()
 f_alpha.close()
+f_pi.close()

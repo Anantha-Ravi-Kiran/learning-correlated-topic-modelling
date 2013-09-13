@@ -40,14 +40,14 @@ do
     done
 
 	#Loading python3.2 for Topic Modelling module
-	module unload python-2.7
-	module load python-3.2
+	#module unload python-2.7
+	#module load python-3.2
 	
 	#Running Expectation maximization ** Running only for K = 50 as it takes long time to run **
 	python ./topic-modelling/learn_params.py ./output/M_$corpus.full_docs.mat.trunc.mat ./output/demo_L2_out.$corpus.50.A  ./output/demo_L2_out.$corpus.50.topwords ./output/report
 	gzip ./output/topics-50.txt
 
 	#Running Topic Eval module for computing the log-likelihood - doc-limit 100
-	./topic-eval/bin/run topics.LDAHeldOut --instances  ./output/doc.mallet --num-topics 50 --parameters ./output/alpha.txt --topics-files ./output/topics-50.txt.gz --beta 0.01 --doc-limit 100
-	
+	#./topic-eval/bin/run topics.LDAHeldOut --instances  ./output/doc.mallet --num-topics 50 --parameters ./output/alpha.txt --topics-files ./output/topics-50.txt.gz --beta 0.01 --doc-limit 100
+    ./eval_EM.pl ./output/alpha_50.txt ./output/pi_50.txt 5 2
 done
