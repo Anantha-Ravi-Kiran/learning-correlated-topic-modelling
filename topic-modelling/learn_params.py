@@ -30,13 +30,14 @@ class Timer:
         self.interval = self.end - self.start
 
 if len(sys.argv) < 4:
-    print("usage: input_doc A_matrix top_words output_file")
+    print("usage: input_doc A_matrix top_words output_file corpus_string")
     sys.exit()
 
 input_docs_file=sys.argv[1]
 A_file=sys.argv[2]
 top_words_in=sys.argv[3]
 output_file=sys.argv[4]
+corpus = sys.argv[5]
 
 dirname,f_temp = os.path.split(sys.argv[2])
 
@@ -54,7 +55,6 @@ finally:
 	topwords_file.close()
 
 # Initialization
-input_docs = input_docs[:,1:10]
 vocabSize = input_docs.shape[0]
 numdocs = input_docs.shape[1]
 no_of_topics = A.shape[1]
@@ -69,7 +69,7 @@ for i in range(A.shape[1]):
 	A[:,i] = A[:,i]/A[:,i].sum()
 
 # Writting the A matrix compatible with mallet
-out_beta = "%s/%s%d.txt" %(dirname,"topics-",no_of_topics)
+out_beta = "%s/%s_%s_%d.txt" %(dirname,"topics",corpus,no_of_topics)
 f_beta = open(out_beta,'w')
 for vocab in range(vocabSize):
 	for topic in range(no_of_topics):
@@ -106,9 +106,9 @@ for docs in doc_list:
 #word_list = np.array(word_list) #YONI COMMENTED OUT HERE
 
 # Writting the report to the output - bufsize = 0 for unbuffering.
-out_file_name = "%s_%d.html" %(output_file,no_of_topics)
-out_alpha = "%s/%s_%d.txt" %(dirname,"alpha",no_of_topics)
-out_pi = "%s/%s_%d.txt" %(dirname,"pi",no_of_topics)
+out_file_name = "%s_%s_%d.html" %(output_file,corpus,no_of_topics)
+out_alpha = "%s/%s_%s_%d.txt" %(dirname,"alpha",corpus,no_of_topics)
+out_pi = "%s/%s_%s_%d.txt" %(dirname,"pi",corpus,no_of_topics)
 
 f = open(out_file_name,'w')
 f_alpha = open(out_alpha,'w')
@@ -124,7 +124,8 @@ for K in range(5,6):
 	# Pending - Initialize alpha using the moments from the data instead.
 	p_md,E_log_theta = em.Expectation(alpha, Pi, A, word_list, doc_list,vocabSize,numdocs)
 	#while True:
-	for i in range(1,3):
+	for i in range(100):
+		print("iteration",i)
 		Pi, alpha = em.Maximization(p_md,E_log_theta,alpha)
 		p_md,E_log_theta = em.Expectation(alpha, Pi, A, word_list, doc_list,vocabSize,numdocs)
 		
@@ -138,6 +139,15 @@ for K in range(5,6):
 			print p
 			f_pi.write("%f\n"%p)
 
+		print(alpha)	
+
+		# For flushing the buffers after every iterations
+		f_alpha.close()
+		f_pi.close()
+		f_alpha = open(out_alpha,'a')
+		f_pi = open(out_pi, 'a')
+
+
 	# Print Top topics corresponding to the learned alphas    
 	top_index = em.pick_top_index(alpha,5)
 	for i in range(top_index.shape[0]):
@@ -146,19 +156,12 @@ for K in range(5,6):
 		for index in ind_alpha_index:
 			print(index[1],':',topwords[int(index[0])])
    
-	print(alpha)
-	print(Pi)
-
 	ht = ch.create_html_report(topwords,top_index,Pi)
 	#print(ht,file=f)
 	print >>f, ht
 
-	# For flushing the buffers after every iterations
 	f.close()
-	f_alpha.close()
 	f = open(out_file_name,'a')
-	f_alpha = open(out_alpha,'a')
-	f_pi = open(out_pi, 'a')
 
 
 f.close()
