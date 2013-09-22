@@ -1,4 +1,11 @@
 #!/bin/bash
+
+if [ $# -ne 4 ]
+  then
+    echo "Usage: <folder containing files/corpus> <output folder> <num_topics> <num_comp>"
+	exit 0
+fi
+
 echo "start demo"
 BASE_FOLDER=`pwd`
 
@@ -9,6 +16,9 @@ else
 fi
 
 OUTPUT_FOLDER=$2 
+NUM_TOPICS=$3
+NUM_COMP=$4
+NUM_ITRN=100
 
 for corpus in $CORPUS 
 do
@@ -49,9 +59,17 @@ do
 	python ./tools/scipy_to_mallet_input.py $OUTPUT_FOLDER/M_$corpus.full_docs.mat.trunc.mat $OUTPUT_FOLDER/vocab_$corpus.txt.trunc $OUTPUT_FOLDER/doc.in
 	./topic-eval/bin/run ExistingAlphabetImporter --input $OUTPUT_FOLDER/doc.in  --output $OUTPUT_FOLDER/doc.mallet --vocab $OUTPUT_FOLDER/vocab_$corpus.txt.trunc
 
+	# Splitting the input into training and testing data
+	# Produces output for all the modules mallet, scipy for MoM and CTM
+	python ./tools/test_train_split.py $OUTPUT_FOLDER/M_$corpus.full_docs.mat.trunc.mat $OUTPUT_FOLDER/vocab_$corpus.txt.trunc $corpus
+
+	# Generating input (train and test) for Mallet Package 
+	./topic-eval/bin/run ExistingAlphabetImporter --input $OUTPUT_FOLDER/$corpus\_train.mallet --output $OUTPUT_FOLDER/$corpus\_train.in.mallet --vocab $OUTPUT_FOLDER/vocab_$corpus.txt.trunc
+	./topic-eval/bin/run ExistingAlphabetImporter --input $OUTPUT_FOLDER/$corpus\_test.mallet --output $OUTPUT_FOLDER/$corpus\_test.in.mallet --vocab $OUTPUT_FOLDER/vocab_$corpus.txt.trunc
+
     for loss in L2
     do
-        for K in 50
+        for K in $NUM_TOPICS
         do
             echo "learning with nonnegative recover method using $loss loss..."
             python ./anchor-word-recovery/learn_topics.py $OUTPUT_FOLDER/M_$corpus.full_docs.mat.trunc.mat ./anchor-word-recovery/settings.example $OUTPUT_FOLDER/vocab_$corpus.txt.trunc $K $loss $OUTPUT_FOLDER/demo_$loss\_out.$corpus.$K
@@ -63,10 +81,12 @@ do
 	#module load python-3.2
 	
 	#Running Expectation maximization ** Running only for K = 50 as it takes long time to run **
-	python ./topic-modelling/learn_params.py $OUTPUT_FOLDER/M_$corpus.full_docs.mat.trunc.mat $OUTPUT_FOLDER/demo_L2_out.$corpus.50.A  $OUTPUT_FOLDER/demo_L2_out.$corpus.50.topwords $OUTPUT_FOLDER/report $corpus
-	gzip -f $OUTPUT_FOLDER/topics_$corpus\_50.txt
+	python ./topic-modelling/learn_params.py  $OUTPUT_FOLDER/$corpus\_train.scipy $OUTPUT_FOLDER/demo_L2_out.$corpus.$NUM_TOPICS.A  $OUTPUT_FOLDER/demo_L2_out.$corpus.$NUM_TOPICS.topwords $OUTPUT_FOLDER/report $NUM_COMP $NUM_ITRN $corpus
+	gzip -f $OUTPUT_FOLDER/topics_$corpus\_$NUM_TOPICS.txt
 
 	#Running Topic Eval module for computing the log-likelihood - doc-limit 100
 	#./topic-eval/bin/run topics.LDAHeldOut --instances  $OUTPUT_FOLDER/doc.mallet --num-topics 50 --parameters $OUTPUT_FOLDER/alpha.txt --topics-files $OUTPUT_FOLDER/topics-50.txt.gz --beta 0.01 --doc-limit 100
-    perl ./eval_EM.pl $OUTPUT_FOLDER/alpha_$corpus\_50.txt $OUTPUT_FOLDER/pi_$corpus\_50.txt 5 2 $corpus $OUTPUT_FOLDER
+    perl ./eval_EM.pl $OUTPUT_FOLDER/alpha_$corpus\_$NUM_TOPICS.txt $OUTPUT_FOLDER/pi_$corpus\_$NUM_TOPICS.txt $NUM_COMP $NUM_ITRN $corpus $OUTPUT_FOLDER $NUM_TOPICS $OUTPUT_FOLDER/$corpus\_train.in.mallet
+    perl ./eval_EM.pl $OUTPUT_FOLDER/alpha_$corpus\_$NUM_TOPICS.txt $OUTPUT_FOLDER/pi_$corpus\_$NUM_TOPICS.txt $NUM_COMP $NUM_ITRN $corpus $OUTPUT_FOLDER $NUM_TOPICS $OUTPUT_FOLDER/$corpus\_test.in.mallet
+
 done

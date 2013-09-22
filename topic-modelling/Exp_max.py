@@ -27,8 +27,13 @@ def Maximization(p_md, E_log_theta, alpha):
     print('- Maximization - Running')
     
     Pi = p_md.sum(axis=0)
+    
+	# Setting zero values in Pi to smallest possible float and 
+	# Renormalization to 1   
+    Pi = [remove_zero(comp) for comp in Pi]    
+    Pi = np.array(Pi)
     Pi = Pi/Pi.sum()
-
+    
     # alpha maximization
     K = alpha.shape[0]
     no_of_topics = alpha.shape[1]

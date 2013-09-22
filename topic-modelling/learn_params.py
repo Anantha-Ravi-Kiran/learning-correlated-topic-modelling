@@ -5,7 +5,7 @@ from scipy.sparse import *
 from scipy import *
 from scipy.special import digamma
 from html import HTML
-import  multiprocessing as mp
+import multiprocessing as mp
 import sys
 import scipy.io
 import numpy as np
@@ -29,15 +29,17 @@ class Timer:
         self.end = time.clock()
         self.interval = self.end - self.start
 
-if len(sys.argv) < 4:
-    print("usage: input_doc A_matrix top_words output_file corpus_string")
+if len(sys.argv) < 7:
+    print("usage: input_doc A_matrix top_words output_file num_comp num_itrn corpus_string")
     sys.exit()
 
 input_docs_file=sys.argv[1]
 A_file=sys.argv[2]
 top_words_in=sys.argv[3]
 output_file=sys.argv[4]
-corpus = sys.argv[5]
+K = int(sys.argv[5])
+num_itrn = int(sys.argv[6])
+corpus = sys.argv[7]
 
 dirname,f_temp = os.path.split(sys.argv[2])
 
@@ -115,54 +117,49 @@ f_alpha = open(out_alpha,'w')
 f_pi = open(out_pi, 'w')
 
 #for K in range(1,int(no_of_topics/5) + 1):
-for K in range(5,6):    
 	# Initializing the dirichlet mixtures with equal probability
 
-	Pi = np.ones(K)*(1/K)     
-	alpha = np.ones([K,no_of_topics])*(1/no_of_topics)
+Pi = np.ones(K)*(1/K)     
+alpha = np.ones([K,no_of_topics])*(1/no_of_topics)
 
-	# Pending - Initialize alpha using the moments from the data instead.
+# Pending - Initialize alpha using the moments from the data instead.
+p_md,E_log_theta = em.Expectation(alpha, Pi, A, word_list, doc_list,vocabSize,numdocs)
+#while True:
+for i in range(num_itrn):
+	print("iteration",i)
+	Pi, alpha = em.Maximization(p_md,E_log_theta,alpha)
 	p_md,E_log_theta = em.Expectation(alpha, Pi, A, word_list, doc_list,vocabSize,numdocs)
-	#while True:
-	for i in range(100):
-		print("iteration",i)
-		Pi, alpha = em.Maximization(p_md,E_log_theta,alpha)
-		p_md,E_log_theta = em.Expectation(alpha, Pi, A, word_list, doc_list,vocabSize,numdocs)
-		
-		# Write alpha and pi out for likelihood computation
-		for m in range(K):
-			for topics in range(no_of_topics):	
-				f_alpha.write("%f\t"%(alpha[m,topics]))
-			f_alpha.write("\n")
+	
+	# Write alpha and pi out for likelihood computation
+	for m in range(K):
+		for topics in range(no_of_topics):	
+			f_alpha.write("%f\t"%(alpha[m,topics]))
+		f_alpha.write("\n")
 
-		for p in Pi:
-			print p
-			f_pi.write("%f\n"%p)
+	for p in Pi:
+		print p
+		f_pi.write("%f\n"%p)
 
-		print(alpha)	
+	print(alpha)	
 
-		# For flushing the buffers after every iterations
-		f_alpha.close()
-		f_pi.close()
-		f_alpha = open(out_alpha,'a')
-		f_pi = open(out_pi, 'a')
+	# For flushing the buffers after every iterations
+	f_alpha.close()
+	f_pi.close()
+	f_alpha = open(out_alpha,'a')
+	f_pi = open(out_pi, 'a')
 
 
-	# Print Top topics corresponding to the learned alphas    
-	top_index = em.pick_top_index(alpha,5)
-	for i in range(top_index.shape[0]):
-		print("Top Alpha Topics in cluster",i)
-		ind_alpha_index = top_index[i]
-		for index in ind_alpha_index:
-			print(index[1],':',topwords[int(index[0])])
-   
-	ht = ch.create_html_report(topwords,top_index,Pi)
-	#print(ht,file=f)
-	print >>f, ht
+# Print Top topics corresponding to the learned alphas    
+top_index = em.pick_top_index(alpha,5)
+for i in range(top_index.shape[0]):
+	print("Top Alpha Topics in cluster",i)
+	ind_alpha_index = top_index[i]
+	for index in ind_alpha_index:
+		print(index[1],':',topwords[int(index[0])])
 
-	f.close()
-	f = open(out_file_name,'a')
-
+ht = ch.create_html_report(topwords,top_index,Pi)
+#print(ht,file=f)
+print >>f, ht
 
 f.close()
 f_alpha.close()

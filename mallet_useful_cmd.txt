@@ -1,0 +1,72 @@
+train-topics help
+
+	Basic help:
+
+	--num-topics INTEGER
+	  The number of topics to fit.
+	  Default is 10
+	--num-threads INTEGER
+	  The number of threads for parallel training.
+	  Default is 1
+	--input FILENAME
+	  The filename from which to read the list of training instances.  Use - for stdin.  The instances must be FeatureSequence or FeatureSequenceWithBigrams, not FeatureVector
+	  Default is null
+	--output-model FILENAME
+	  The filename in which to write the binary topic model at the end of the iterations.  By default this is null, indicating that no file will be written.
+	  Default is null
+	--input-model FILENAME
+	  The filename from which to read the binary topic model to which the --input will be appended, allowing incremental training.  By default this is null, indicating that no file will be read.
+	  Default is null
+	--use-pam true|false
+	  Rather than using LDA, use Pachinko Allocation Model, which models topical correlations.You cannot do this and also --use-ngrams.
+	  Default is false
+	--pam-num-supertopics INTEGER
+	  When using the Pachinko Allocation Model (PAM) set the number of supertopics.  Typically this is about half the number of subtopics, although more may help.
+	  Default is 10
+	--pam-num-subtopics INTEGER
+	  When using the Pachinko Allocation Model (PAM) set the number of subtopics.
+	  Default is 20
+
+	Inference help:
+	--inferencer-filename FILENAME
+	  A topic inferencer applies a previously trained topic model to new documents.  By default this is null, indicating that no file will be written.
+	  Default is null
+	--evaluator-filename FILENAME
+	  A held-out likelihood evaluator for new documents.  By default this is null, indicating that no file will be written.
+	  Default is null
+	  
+
+	Printing help:
+	--output-topic-keys FILENAME
+	  The filename in which to write the top words for each topic and any Dirichlet parameters.  By default this is null, indicating that no file will be written.
+	  Default is null
+	--output-doc-topics FILENAME
+	  The filename in which to write the topic proportions per document, at the end of the iterations.  By default this is null, indicating that no file will be written.
+	  Default is null
+
+Evaluate Topics help:
+	--evaluator FILENAME (Mostly output from the trained model)
+	  A serialized topic evaluator from a trained topic model.
+	By default this is null, indicating that no file will be read.
+	  Default is null
+	--input FILENAME
+	  The filename from which to read the list of instances
+	for which topics should be inferred.  Use - for stdin.  The instances must be FeatureSequence or FeatureSequenceWithBigrams, not FeatureVector
+	  Default is null
+	--output-doc-probs FILENAME
+	  The filename in which to write the inferred log probabilities
+	per document.  By default this is null, indicating that no file will be written.
+	  Default is null
+	--output-prob FILENAME
+	  The filename in which to write the inferred log probability of the testing set
+	Use - for stdout, which is the default.
+	  Default is -
+	--num-particles INTEGER
+	  The number of particles to use in left-to-right evaluation.
+	  Default is 10
+	--use-resampling TRUE|FALSE
+	  Whether to resample topics in left-to-right evaluation. Resampling is more accurate, but leads to quadratic scaling in the lenght of documents.
+	  Default is false
+	--num-iterations INTEGER
+	  The number of iterations of Gibbs sampling.
+	  Default is 100

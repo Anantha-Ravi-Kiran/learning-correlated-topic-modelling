@@ -1,0 +1,14 @@
+For help instructions:
+	bin/mallet import-dir --help
+To convert list of input files:
+	bin\mallet import-dir --input pathway\to\the\directory\with\the\files --output tutorial.mallet --keep-sequence --remove-stopwords
+To train:
+	bin\mallet train-topics  --input tutorial.mallet --num-topics 20 --output-state topic-state.gz --output-topic-keys tutorial_keys.txt --output-doc-topics tutorial_compostion.txt
+
+	This command:
+		opens your tutorial.mallet file
+		trains MALLET to find 20 topics
+		outputs every word in your corpus of materials and the topic it belongs to into a compressed file 
+		outputs a text document showing you what the top key words are for each topic (tutorial_keys.txt)
+		and outputs a text file indicating the breakdown, by percentage, of each topic within each original text file you imported (tutorial_composition.txt). (To see the full range of possible parameters that you may wish to tweak, type bin\mallet train-topics –help at the prompt.)
+
