@@ -68,6 +68,13 @@ for i in xrange(M.shape[0]):
 
 print len(candidate_anchors), "candidates"
 
+if len(candidate_anchors) < K:
+    print "*** ERROR: there are only", len(candidate_anchors), "candidate anchors and K=", K
+    print "*** Currently only anchors that appear in more than", params.anchor_thresh, "documents are considered as candidates for anchors"
+    print "*** You can change this in the settings file or try to learn a model with fewer anchors"
+    sys.exit()
+
+
 #forms Q matrix from document-word matrix
 Q = generate_Q_matrix(M)
 
@@ -80,14 +87,20 @@ print "done reading documents"
 
 #find anchors- this step uses a random projection
 #into low dimensional space
-anchors = findAnchors(Q, K, params, candidate_anchors)
+
+anchor_logfile = file(params.log_prefix+'.anchors', 'w')
+anchors = findAnchors(Q, K, params, candidate_anchors, anchor_logfile)
 print "anchors are:"
+print >>anchor_logfile, "anchors are:"
 for i, a in enumerate(anchors):
     print i, vocab[a]
+    print >>anchor_logfile, i, vocab[a]
+anchor_logfile.close()
 
 #recover topics
-A, topic_likelihoods = do_recovery(Q, anchors, loss, params) 
+A, topic_likelihoods,objective = do_recovery(Q, anchors, loss, params) 
 print "done recovering"
+print "avg objective function during recovery using", K, "topics:", objective
 
 np.savetxt(outfile+".A", A)
 np.savetxt(outfile+".topic_likelihoods", topic_likelihoods)

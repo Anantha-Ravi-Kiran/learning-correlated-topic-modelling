@@ -6,12 +6,12 @@ import multiprocessing
 
 def do_recovery(Q, anchors, loss, params):
     if loss == "originalRecover":
-        return (Recover(Q, anchors), None)
+        return (Recover(Q, anchors), None, None)
     elif loss == "KL" or "L2" in loss:
-        A, colsums = nonNegativeRecover(Q, anchors, params.log_prefix, loss, params.max_threads, epsilon=params.eps)
+        A, colsums, objective = nonNegativeRecover(Q, anchors, params.log_prefix, loss, params.max_threads, epsilon=params.eps)
         hp = colsums
         
-        return A, hp
+        return A, hp, objective
     else:
         print "unrecognized loss function", loss, ". Options are KL,L2 or originalRecover"
         
@@ -436,11 +436,15 @@ def nonNegativeRecover(Q, anchors, outfile_name, divergence, max_threads, initia
 
     s = time.time()
     A = matrix(zeros((V, K)))
+    total_obj = None
     if max_threads > 0:
         pool = multiprocessing.Pool(max_threads)
         print "begin threaded recovery with", max_threads, "processors"
         args = myIterator(Q, anchors, outfile_name+".recoveryLog", divergence, V, initial_stepsize, epsilon)
         rows = pool.imap_unordered(fastRecover, args, chunksize = 10)
+
+        total_obj = 0
+        print "word\tnumIterations\tmaxAlpha"
         for r in rows:
             v, it, obj, alpha, stepsize, t, gap = r
             A[v, :] = alpha
@@ -449,6 +453,9 @@ def nonNegativeRecover(Q, anchors, outfile_name, divergence, max_threads, initia
                 print >>alphaLog, v, alpha
                 alphaLog.flush()
                 sys.stdout.flush()
+            total_obj += obj
+        
+        total_obj /= V #average over vocabulary size
     
     else:
         X = Q[anchors, :]
@@ -526,7 +533,7 @@ def nonNegativeRecover(Q, anchors, outfile_name, divergence, max_threads, initia
     #recoveryLog.close()
     topic_likelihoodLog.close()
     word_likelihoodLog.close()
-    return A, colsums
+    return A, colsums, total_obj
 
 
 
