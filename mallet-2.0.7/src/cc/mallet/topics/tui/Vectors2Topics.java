@@ -26,6 +26,16 @@ public class Vectors2Topics {
 		 "The filename from which to read the list of training instances.  Use - for stdin.  " +
 		 "The instances must be FeatureSequence or FeatureSequenceWithBigrams, not FeatureVector", null);
 
+	static CommandOption.String inputFile_test = new CommandOption.String
+		(Vectors2Topics.class, "input-test", "FILENAME", true, null,
+		 "The filename from which to read the list of testing instances.  Use - for stdin.  " +
+		 "The instances must be FeatureSequence or FeatureSequenceWithBigrams, not FeatureVector", null);
+
+	static CommandOption.String beta_anchor_file = new CommandOption.String
+		(Vectors2Topics.class, "input-beta", "FILENAME", true, null,
+		 "The filename from which to read the A matrix from Anchor words.  Use - for stdin.  " +
+		 "The file should be in comma separated form", null);
+
 	static CommandOption.SpacedStrings languageInputFiles = new CommandOption.SpacedStrings
 		(Vectors2Topics.class, "language-inputs", "FILENAME [FILENAME ...]", true, null,
 		 "Filenames for polylingual topic model. Each language should have its own file, " +
@@ -40,6 +50,11 @@ public class Vectors2Topics {
 	static CommandOption.String outputModelFilename = new CommandOption.String
 		(Vectors2Topics.class, "output-model", "FILENAME", true, null,
 		 "The filename in which to write the binary topic model at the end of the iterations.  " +
+		 "By default this is null, indicating that no file will be written.", null);
+
+	static CommandOption.String outputllFilename = new CommandOption.String
+		(Vectors2Topics.class, "output-ll", "FILENAME", true, null,
+		 "The filename in which to write the log Likelihood at the end of the iterations.  " +
 		 "By default this is null, indicating that no file will be written.", null);
 
 	static CommandOption.String inputModelFilename = new CommandOption.String
@@ -115,6 +130,10 @@ public class Vectors2Topics {
 	static CommandOption.Integer numIterations = new CommandOption.Integer
 		(Vectors2Topics.class, "num-iterations", "INTEGER", true, 1000,
 		 "The number of iterations of Gibbs sampling.", null);
+
+	static CommandOption.Integer model = new CommandOption.Integer
+		(Vectors2Topics.class, "model", "INTEGER", true, 0,
+		 "The random seed for the Gibbs sampler.  Default is 0, which will use the clock.", null);
 
 	static CommandOption.Integer randomSeed = new CommandOption.Integer
 		(Vectors2Topics.class, "random-seed", "INTEGER", true, 0,
@@ -201,14 +220,32 @@ public class Vectors2Topics {
 
 		if (usePAM.value) {
 			InstanceList ilist = InstanceList.load (new File(inputFile.value));
+			InstanceList ilist_test = InstanceList.load (new File(inputFile_test.value));
 			System.out.println ("Data loaded.");
 			if (inputModelFilename.value != null)
 				throw new IllegalArgumentException ("--input-model not supported with --use-pam.");
-			PAM4L pam = new PAM4L(pamNumSupertopics.value, pamNumSubtopics.value);
-			pam.estimate (ilist, numIterations.value, /*optimizeModelInterval*/50,
+
+			PrintWriter oos_ll = new PrintWriter(outputllFilename.value, "UTF-8");
+
+
+			File file = new File(beta_anchor_file.value);
+			FileReader fileReader = new FileReader(file);
+			BufferedReader bufferedReader = new BufferedReader(fileReader);
+			StringBuffer beta_anchor = new StringBuffer();
+			String line;
+			while ((line = bufferedReader.readLine()) != null) {
+				beta_anchor.append(line);
+				beta_anchor.append("\n");
+			}
+			fileReader.close();
+
+			PAM4L pam = new PAM4L(pamNumSupertopics.value, pamNumSubtopics.value, beta_anchor.toString());
+
+			pam.estimate (ilist, ilist_test, 300, /*optimizeModelInterval*/50,
 						  showTopicsInterval.value,
 						  outputModelInterval.value, outputModelFilename.value, 
-						  randomSeed.value == 0 ? new Randoms() : new Randoms(randomSeed.value));
+						  randomSeed.value == 0 ? new Randoms() : new Randoms(randomSeed.value), oos_ll, model.value);
+			oos_ll.close();
 			pam.printTopWords(topWords.value, true);
 			if (stateFile.value != null)
 				pam.printState (new File(stateFile.value));
@@ -217,7 +254,6 @@ public class Vectors2Topics {
 				pam.printDocumentTopics (out, docTopicsThreshold.value, docTopicsMax.value);
 				out.close();
 			}
-
 			
 			if (outputModelFilename.value != null) {
 				assert (pam != null);

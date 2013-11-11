@@ -24,6 +24,7 @@
 
 #include <gsl/gsl_vector.h>
 #include <gsl/gsl_matrix.h>
+#include <gsl/gsl_multimin.h>
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -41,6 +42,12 @@ typedef struct llna_var_param {
     short converged;
     double lhood;
     gsl_vector * topic_scores;
+
+	// For Threading
+	gsl_vector * sum_phi;
+	gsl_vector * x;
+    gsl_multimin_fdfminimizer *s;
+	
 } llna_var_param;
 
 
@@ -59,11 +66,12 @@ typedef struct bundle {
 
 void init_temp_vectors(int size);
 int opt_lambda(llna_var_param * var, doc * doc, llna_model * mod);
-void opt_phi(llna_var_param * var, doc * doc, llna_model * mod);
-void opt_nu(llna_var_param * var, doc * doc, llna_model * mod);
-int opt_zeta(llna_var_param * var, doc * doc, llna_model * mod);
+inline void opt_phi(llna_var_param * var, doc * doc, llna_model * mod);
+inline void opt_nu(llna_var_param * var, doc * doc, llna_model * mod);
+inline int opt_zeta(llna_var_param * var, doc * doc, llna_model * mod);
 void lhood_bnd(llna_var_param *var, doc* doc, llna_model* mod);
-double var_inference(llna_var_param * var, doc * doc, llna_model * mod);
+double var_inference(llna_var_param * var, doc * doc, llna_model * mod, int);
+void * var_inference_thread(void *data);
 llna_var_param* new_llna_var_param(int, int);
 void free_llna_var_param(llna_var_param *);
 void update_expected_ss(llna_var_param* , doc*, llna_ss*);

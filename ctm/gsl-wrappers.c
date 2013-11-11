@@ -114,6 +114,17 @@ void vfprint(const gsl_vector * v, FILE * f)
     fflush(f);
 }
 
+void mfprint(const gsl_matrix * m, FILE *f)
+{
+    int i, j;
+    for (i = 0; i < m->size1; i++)
+    {
+	for (j = 0; j < m->size2; j++)
+	    fprintf(f,"%5.5f ", mget(m, i, j));
+	fprintf(f,"\n");
+    }
+    fflush(f);
+}
 
 
 void mprint(const gsl_matrix * m)
@@ -126,7 +137,6 @@ void mprint(const gsl_matrix * m)
 	printf("\n");
     }
 }
-
 
 void scanf_vector(char* filename, gsl_vector* v)
 {
@@ -152,7 +162,6 @@ void printf_vector(char* filename, gsl_vector* v)
     gsl_vector_fprintf(fileptr, v, "%f");
     fclose(fileptr);
 }
-
 
 void printf_matrix(char* filename, gsl_matrix * m)
 {

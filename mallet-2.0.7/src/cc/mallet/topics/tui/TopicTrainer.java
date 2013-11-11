@@ -140,7 +140,7 @@ public class TopicTrainer {
 		 "The number of threads for parallel training.", null);
 
 	static CommandOption.Integer numIterations = new CommandOption.Integer
-		(TopicTrainer.class, "num-iterations", "INTEGER", true, 1000,
+		(TopicTrainer.class, "num-iterations", "INTEGER", true, 300,
 		 "The number of iterations of Gibbs sampling.", null);
 
 	static CommandOption.Boolean noInference = new CommandOption.Boolean

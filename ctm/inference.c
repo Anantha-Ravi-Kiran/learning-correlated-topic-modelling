@@ -31,8 +31,13 @@
 #include "ctm.h"
 #include "params.h"
 #include "inference.h"
+#include "estimate.h"
 
 extern llna_params PARAMS;
+extern int pthread_mutex_lock(pthread_mutex_t  *);
+extern int pthread_mutex_unlock(pthread_mutex_t  *);
+
+pthread_mutex_t M;
 
 double f_lambda(const gsl_vector * p, void * params);
 void df_lambda(const gsl_vector * p, void * params, gsl_vector * df);
@@ -112,12 +117,13 @@ void lhood_bnd(llna_var_param* var, doc* doc, llna_model* mod)
             double log_phi_ij = mget(var->log_phi, i, j);
             if (phi_ij > 0)
             {
+				double lhood_temp;
                 vinc(var->topic_scores, j, phi_ij * doc->count[i]);
-                lhood +=
-                    doc->count[i] * phi_ij *
+                lhood_temp = doc->count[i] * phi_ij *
                     (vget(var->lambda, j) +
                      mget(mod->log_beta, j, doc->word[i]) -
                      log_phi_ij);
+                lhood += lhood_temp;
             }
         }
     }
@@ -125,20 +131,65 @@ void lhood_bnd(llna_var_param* var, doc* doc, llna_model* mod)
     assert(!isnan(var->lhood));
 }
 
+void * var_inference_thread(void *data)
+{
+	struct ThreadData* threaddata = (struct ThreadData*)data; 
+	
+	llna_var_param *var = threaddata->var;
+	doc *doc = threaddata->doc;
+	llna_model *mod = threaddata->model; 
+
+    double lhood_old = 0;
+    double convergence;
+
+    lhood_bnd(var, doc, mod);
+
+    do
+    {
+        var->niter++;
+		
+        opt_zeta(var, doc, mod);
+		//pthread_mutex_lock (&M);	
+        opt_lambda(var, doc, mod);
+        //pthread_mutex_unlock (&M);
+        opt_zeta(var, doc, mod);
+        opt_nu(var, doc, mod);
+        opt_zeta(var, doc, mod);
+        opt_phi(var, doc, mod);
+
+        lhood_old = var->lhood;
+        lhood_bnd(var, doc, mod);
+
+        convergence = fabs((lhood_old - var->lhood) / lhood_old);
+		
+        if ((lhood_old > var->lhood) && (var->niter > 1))
+            printf("WARNING: iter %05d %5.5f > %5.5f\n",
+                   var->niter, lhood_old, var->lhood);
+    }
+    while ((convergence > PARAMS.var_convergence) &&
+           ((PARAMS.var_max_iter < 0) || (var->niter < PARAMS.var_max_iter)));
+
+    if (convergence > PARAMS.var_convergence) var->converged = 0;
+    else var->converged = 1;
+
+    return NULL;
+}
 
 /**
  * optimize zeta
  *
  */
 
-int opt_zeta(llna_var_param * var, doc * doc, llna_model * mod)
+inline int opt_zeta(llna_var_param * var, doc * doc, llna_model * mod)
 {
     int i;
 
     var->zeta = 1.0;
     for (i = 0; i < mod->k-1; i++)
+	{
         var->zeta += exp(vget(var->lambda, i) + (0.5) * vget(var->nu, i));
-
+	}
+		
     return(0);
 }
 
@@ -148,7 +199,7 @@ int opt_zeta(llna_var_param * var, doc * doc, llna_model * mod)
  *
  */
 
-void opt_phi(llna_var_param * var, doc * doc, llna_model * mod)
+inline void opt_phi(llna_var_param * var, doc * doc, llna_model * mod)
 {
     int i, n, K = mod->k;
     double log_sum_n = 0;
@@ -252,8 +303,8 @@ void df_lambda(const gsl_vector * p, void * params, gsl_vector * df)
 int opt_lambda(llna_var_param * var, doc * doc, llna_model * mod)
 {
     gsl_multimin_function_fdf lambda_obj;
-    const gsl_multimin_fdfminimizer_type * T;
-    gsl_multimin_fdfminimizer * s;
+    //const gsl_multimin_fdfminimizer_type * T;
+    gsl_multimin_fdfminimizer *s;
     bundle b;
     int iter = 0, i, j;
     int status;
@@ -265,7 +316,7 @@ int opt_lambda(llna_var_param * var, doc * doc, llna_model * mod)
 
     // precompute \sum_n \phi_n and put it in the bundle
 
-    b.sum_phi = gsl_vector_alloc(mod->k-1);
+    b.sum_phi = var->sum_phi;
     gsl_vector_set_zero(b.sum_phi);
     for (i = 0; i < doc->nterms; i++)
     {
@@ -285,12 +336,15 @@ int opt_lambda(llna_var_param * var, doc * doc, llna_model * mod)
 
     // starting value
     // T = gsl_multimin_fdfminimizer_vector_bfgs;
-    T = gsl_multimin_fdfminimizer_conjugate_fr;
+    // T = gsl_multimin_fdfminimizer_conjugate_fr;
     // T = gsl_multimin_fdfminimizer_steepest_descent;
-    s = gsl_multimin_fdfminimizer_alloc (T, mod->k-1);
+    s = var->s;
+    gsl_vector* x = var->x;
 
-    gsl_vector* x = gsl_vector_calloc(mod->k-1);
-    for (i = 0; i < mod->k-1; i++) vset(x, i, vget(var->lambda, i));
+    for (i = 0; i < mod->k-1; i++) 
+		vset(x, i, vget(var->lambda, i));
+
+	pthread_mutex_lock (&M);	
     gsl_multimin_fdfminimizer_set (s, &lambda_obj, x, 0.01, 1e-3);
     do
     {
@@ -306,16 +360,14 @@ int opt_lambda(llna_var_param * var, doc * doc, llna_model * mod)
            ((PARAMS.cg_max_iter < 0) || (iter < PARAMS.cg_max_iter)));
     // while ((converged > PARAMS.cg_convergence) &&
     // ((PARAMS.cg_max_iter < 0) || (iter < PARAMS.cg_max_iter)));
+    pthread_mutex_unlock (&M);
+
     if (iter == PARAMS.cg_max_iter)
         printf("warning: cg didn't converge (lambda) \n");
 
     for (i = 0; i < mod->k-1; i++)
         vset(var->lambda, i, vget(s->x, i));
     vset(var->lambda, i, 0);
-
-    gsl_multimin_fdfminimizer_free(s);
-    gsl_vector_free(b.sum_phi);
-    gsl_vector_free(x);
 
     return(0);
 }
@@ -362,7 +414,7 @@ double d2f_nu_i(double nu_i, int i, llna_var_param * var, llna_model * mod, doc 
 }
 
 
-void opt_nu(llna_var_param * var, doc * d, llna_model * mod)
+inline void opt_nu(llna_var_param * var, doc * d, llna_model * mod)
 {
     int i;
 
@@ -466,6 +518,16 @@ llna_var_param * new_llna_var_param(int nterms, int k)
     ret->log_phi = gsl_matrix_alloc(nterms, k);
     ret->zeta = 0;
     ret->topic_scores = gsl_vector_alloc(k);
+
+	// For Threading
+    ret->sum_phi = gsl_vector_alloc(k-1);
+    ret->x = gsl_vector_alloc(k-1);
+	ret->s = gsl_multimin_fdfminimizer_alloc (
+					gsl_multimin_fdfminimizer_conjugate_fr, 
+					k-1);
+
+
+	
     return(ret);
 }
 
@@ -474,16 +536,19 @@ void free_llna_var_param(llna_var_param * v)
 {
     gsl_vector_free(v->lambda);
     gsl_vector_free(v->nu);
+    gsl_vector_free(v->sum_phi);
+    gsl_vector_free(v->x);
     gsl_matrix_free(v->phi);
     gsl_matrix_free(v->log_phi);
     gsl_vector_free(v->topic_scores);
+    gsl_multimin_fdfminimizer_free(v->s);
     free(v);
 }
 
-
 double var_inference(llna_var_param * var,
                      doc * doc,
-                     llna_model * mod)
+                     llna_model * mod,
+                     int doc_num)
 {
     double lhood_old = 0;
     double convergence;
@@ -504,7 +569,6 @@ double var_inference(llna_var_param * var,
         lhood_bnd(var, doc, mod);
 
         convergence = fabs((lhood_old - var->lhood) / lhood_old);
-        // printf("lhood = %8.6f (%7.6f)\n", var->lhood, convergence);
 
         if ((lhood_old > var->lhood) && (var->niter > 1))
             printf("WARNING: iter %05d %5.5f > %5.5f\n",
@@ -519,12 +583,11 @@ double var_inference(llna_var_param * var,
     return(var->lhood);
 }
 
-
 void update_expected_ss(llna_var_param* var, doc* d, llna_ss* ss)
 {
     int i, j, w, c;
     double lilj;
-
+	
     // covariance and mean suff stats
     for (i = 0; i < ss->cov_ss->size1; i++)
     {

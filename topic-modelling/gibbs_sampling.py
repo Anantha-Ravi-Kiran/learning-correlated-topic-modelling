@@ -51,8 +51,8 @@ def log_dirichlet_const(alpha):
 
 def count_topics(z_d, word_index, no_of_topics):
     topics_count = np.zeros(no_of_topics)
-    for i in word_index:
-        topics_count[z_d[i]] += 1 
+    for i in z_d:
+        topics_count[i] += 1 
     return topics_count
 
 def log_np_array(Pi):
@@ -61,10 +61,10 @@ def log_np_array(Pi):
         log_Pi[i] = math.log(Pi[i])
     return log_Pi
 
-def gibbs_sampling(alpha,Pi,A,word_list,doc_list,vocabSize,numdocs):
+def gibbs_sampling(alpha,Pi,A,word_list,doc_list,vocabSize,numdocs,z_init,gibbs_itrn):
         
     print('-Gibbs Sampling')
-    no_of_itr = 1000
+    no_of_itr = gibbs_itrn
     no_of_topics = A.shape[1] 
     X = 50 # Burning-in 
     K = alpha.shape[0] # No of mixture components
@@ -98,9 +98,8 @@ def gibbs_sampling(alpha,Pi,A,word_list,doc_list,vocabSize,numdocs):
     procs = []
     for proc_id in range(max_procs):
         p = mp.Process(target = gibbs_sep_doc,
-                       args = (alpha,Pi,A,word_list[proc_id],doc_list[proc_id],
-                       z_count,p_md,E_theta,E_m_d_theta,
-                       X,no_of_itr,vocabSize,proc_id))
+                       args = (alpha,Pi,A,word_list[proc_id],z_init[proc_id],doc_list[proc_id],
+                       z_count,p_md,E_theta,E_m_d_theta,X,no_of_itr,vocabSize,proc_id))
 
         p.start()
         procs.append(p)
@@ -113,7 +112,7 @@ def gibbs_sampling(alpha,Pi,A,word_list,doc_list,vocabSize,numdocs):
     return (z_count, p_md, E_theta, E_m_d_theta)
  
 # This function is called only for a set of documents among the doc_list.
-def gibbs_sep_doc(alpha,Pi,A,word_doc,doc_list,\
+def gibbs_sep_doc(alpha,Pi,A,word_doc,z_doc,doc_list,\
                   z_count_all,p_md_all,E_theta_all,E_m_d_theta_all,\
                   X,no_of_itr,vocabSize,proc_id):
 
@@ -129,12 +128,12 @@ def gibbs_sep_doc(alpha,Pi,A,word_doc,doc_list,\
     E_theta = np.zeros([no_of_topics])
     E_m_d_theta = np.zeros([K,no_of_topics])
     z_count = np.zeros([vocabSize,no_of_topics])
-        
+               
     # iterating through every document  
     idx = 0
     for doc_index in doc_list:
         word_indices = word_doc[idx]
-        z_d = z_init
+        z_d = z_doc[idx]
         E_theta.fill(0)
         E_m_d_theta.fill(0)
         p_M.fill(0)
@@ -148,6 +147,7 @@ def gibbs_sep_doc(alpha,Pi,A,word_doc,doc_list,\
             log_p_md = log_np_array(Pi) + p_theta_gm
             norm_log_pmd = (log_p_md - compute_log_sum(log_p_md))
             p_md = np.array([math.exp(m) for m in norm_log_pmd])
+            p_md = p_md/p_md.sum()
             M = np.random.multinomial(1,p_md,size=1).argmax()
 
             # Sampling theta
@@ -158,12 +158,14 @@ def gibbs_sep_doc(alpha,Pi,A,word_doc,doc_list,\
             local_theta = np.array([remove_zero(m) for m in local_theta[0]])
             theta = local_theta/local_theta.sum()
             
+            w_count = 0
             for w_index in word_indices:
                 # iterating through every word in document to sample z
                 p_zd = A[w_index] * theta
                 p_zd = p_zd/p_zd.sum()
                 word_topic = np.random.multinomial(1,p_zd,size=1).argmax()
-                z_d[w_index] = word_topic
+                z_d[w_count] = word_topic
+                w_count = w_count + 1 
 
                 if (i >= X):                  
                     z_count[w_index, word_topic] += 1 

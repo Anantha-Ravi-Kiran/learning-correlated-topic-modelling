@@ -1,6 +1,5 @@
 package cc.mallet.topics;
 
-
 /* Copyright (C) 2005 Univ. of Massachusetts Amherst, Computer Science Dept.
 This file is part of "MALLET" (MAchine Learning for LanguagE Toolkit).
 http://www.cs.umass.edu/~mccallum/mallet
@@ -13,6 +12,8 @@ import cc.mallet.util.Randoms;
 import java.util.Arrays;
 import java.io.*;
 import java.text.NumberFormat;
+
+import java.util.*;
 
 /**
  * Four Level Pachinko Allocation with MLE learning, 
@@ -51,9 +52,15 @@ public class PAM4L {
 	double[][] superSubWeights; // unnormalized sampling distribution
 	double[] cumulativeSuperWeights; // a cache of the cumulative weight for each super-topic
 
+	// For Computing likelihood using left2right evaluation
+	double[][] probSuperSubTopic;
+
 	// Per-word type state variables
 	int[][] typeSubTopicCounts; // indexed by <feature index, topic index>
 	int[] tokensPerSubTopic; // indexed by <topic index>
+
+	// Topic-word probability
+	double[][] phi;	// indexed by <feature index, topic index>
 
 	// [for debugging purposes]
 	int[] tokensPerSuperTopic; // indexed by <topic index>
@@ -63,16 +70,18 @@ public class PAM4L {
 	int[][] superTopicHistograms; // histogram of # of words per supertopic in documents
 	//  eg, [17][4] is # of docs with 4 words in sT 17...
 	int[][][] subTopicHistograms; // for each supertopic, histogram of # of words per subtopic
+	
+	double [][] beta_anchor;
 
 	Runtime runtime;
 	NumberFormat formatter;
 
-	public PAM4L (int superTopics, int subTopics) {
-		this (superTopics, subTopics, 50.0, 0.001);
+	public PAM4L (int superTopics, int subTopics, String beta_anchor_inp) {
+		this (superTopics, subTopics, 50.0, 0.001, beta_anchor_inp);
 	}
 
 	public PAM4L (int superTopics, int subTopics,
-	              double alphaSum, double beta) {
+	              double alphaSum, double beta, String beta_anchor_inp) {
 		formatter = NumberFormat.getInstance();
 		formatter.setMaximumFractionDigits(5);
 
@@ -86,6 +95,8 @@ public class PAM4L {
 		subAlphas = new double[superTopics][subTopics];
 		subAlphaSums = new double[superTopics];
 
+		probSuperSubTopic = new double[superTopics][subTopics];
+
 		// Initialize the sub-topic alphas to a symmetric dirichlet.
 		for (int superTopic = 0; superTopic < superTopics; superTopic++) {
 			Arrays.fill(subAlphas[superTopic], 1.0);
@@ -94,13 +105,24 @@ public class PAM4L {
 
 		this.beta = beta; // We can't calculate vBeta until we know how many word types...
 
+		String[] lines = beta_anchor_inp.split("\n");
+		beta_anchor = new double[lines.length][];
+
+		for (int i=0; i<lines.length; i++) {
+			String[] sep_lines = lines[i].split(" ");
+			beta_anchor[i] = new double[sep_lines.length];
+			for (int j=0; j < sep_lines.length; j++) {
+				beta_anchor[i][j] = Double.parseDouble(sep_lines[j]);
+			}
+		}
+		
 		runtime = Runtime.getRuntime();
 	}
 
-	public void estimate (InstanceList documents, int numIterations, int optimizeInterval, 
+	public void estimate (InstanceList documents, InstanceList documents_test, int numIterations, int optimizeInterval, 
 	                      int showTopicsInterval,
 	                      int outputModelInterval, String outputModelFilename,
-	                      Randoms r)
+	                      Randoms r, PrintWriter oss_ll, int model)
 	{
 		ilist = documents;
 		numTypes = ilist.getDataAlphabet().size ();
@@ -132,6 +154,18 @@ public class PAM4L {
 		//		and finish allocating this.topics and this.tokens
 
 		int superTopic, subTopic, seqLen;
+
+		for(int i = 0; i < numSubTopics; i++)
+		{
+			double sum = 0;
+			for(int j = 0; j < numTypes; j++)
+				sum += beta_anchor[j][i];
+
+			for(int j = 0; j < numTypes; j++)
+			{
+				beta_anchor[j][i] = (beta_anchor[j][i] + beta)/(sum + vBeta);
+			}
+		}
 
 		for (int di = 0; di < numDocs; di++) {
 
@@ -166,6 +200,8 @@ public class PAM4L {
 			}
 		}
 
+		phi = new double[numTypes][numSubTopics];
+
 		System.out.println("max tokens: " + maxTokens);
 
 		//		These will be initialized at the first call to 
@@ -180,7 +216,7 @@ public class PAM4L {
 			long iterationStart = System.currentTimeMillis();
 
 			clearHistograms();
-			sampleTopicsForAllDocs (r);
+			sampleTopicsForAllDocs (r, model);
 
 			// There are a few things we do on round-numbered iterations
 			//  that don't make sense if this is the first iteration.
@@ -198,7 +234,7 @@ public class PAM4L {
 					for (superTopic = 0; superTopic < numSuperTopics; superTopic++) {
 						learnParameters(subAlphas[superTopic],
 								subTopicHistograms[superTopic],
-								superTopicHistograms[superTopic]);
+								superTopicHistograms[superTopic],model);
 						subAlphaSums[superTopic] = 0.0;
 						for (subTopic = 0; subTopic < numSubTopics; subTopic++) {
 							subAlphaSums[superTopic] += subAlphas[superTopic][subTopic];
@@ -212,8 +248,11 @@ public class PAM4L {
 				printWordCounts();
 			}
 
-			if (iterations % 10 == 0)
+			if (iterations % 50 == 0)
 				System.out.println ("<" + iterations + "> ");
+
+			if (iterations % 10 == 0)
+				l2rEvaluatior(r,oss_ll, model);
 
 			System.out.print((System.currentTimeMillis() - iterationStart) + " ");
 
@@ -248,7 +287,7 @@ public class PAM4L {
 	}
 
 	/** Use the fixed point iteration described by Tom Minka. */
-	public void learnParameters(double[] parameters, int[][] observations, int[] observationLengths) {
+	public void learnParameters(double[] parameters, int[][] observations, int[] observationLengths, int model) {
 		int i, k;
 
 		double parametersSum = 0;
@@ -352,20 +391,21 @@ public class PAM4L {
 	}
 
 	/* One iteration of Gibbs sampling, across all documents. */
-	private void sampleTopicsForAllDocs (Randoms r)
+	private void sampleTopicsForAllDocs (Randoms r, int model)
 	{
 //		Loop over every word in the corpus
 		for (int di = 0; di < superTopics.length; di++) {
-
-			sampleTopicsForOneDoc ((FeatureSequence)ilist.get(di).getData(),
-					superTopics[di], subTopics[di], r);
+			FeatureSequence oneDocTokens = (FeatureSequence)ilist.get(di).getData();			
+			sampleTopicsForOneDoc(oneDocTokens,superTopics[di], subTopics[di], r, oneDocTokens.getLength()-1,0, model);
 		}
 	}
 
 	private void sampleTopicsForOneDoc (FeatureSequence oneDocTokens,
 	                                    int[] superTopics, // indexed by seq position
 	                                    int[] subTopics,
-	                                    Randoms r) {
+	                                    Randoms r,
+	                                    int last_word,
+	                                    int l2r_evaluator, int model) {
 
 //		long startTime = System.currentTimeMillis();
 
@@ -373,28 +413,25 @@ public class PAM4L {
 		int[] currentSuperSubCounts;
 		double[] currentSuperSubWeights;
 		double[] currentSubAlpha;
+		int si;
 
 		int type, subTopic, superTopic;
 		double currentSuperWeight, cumulativeWeight, sample;
 
-		int docLen = oneDocTokens.getLength();
-
 		for (int t = 0; t < numSuperTopics; t++) {
 			Arrays.fill(superSubCounts[t], 0);
 		}
-
 		Arrays.fill(superCounts, 0);
-
-
+	
 //		populate topic counts
-		for (int si = 0; si < docLen; si++) {
+		for (si = 0; si < oneDocTokens.getLength(); si++) {
 			superSubCounts[ superTopics[si] ][ subTopics[si] ]++;
 			superCounts[ superTopics[si] ]++;
 		}
-
+		
 //		Iterate over the positions (words) in the document
 
-		for (int si = 0; si < docLen; si++) {
+		for (si = 0; si < last_word+1; si++) {
 
 			type = oneDocTokens.getIndexAtPosition(si);
 			superTopic = superTopics[si];
@@ -419,8 +456,6 @@ public class PAM4L {
 			Arrays.fill(subWeights, 0.0);
 			Arrays.fill(cumulativeSuperWeights, 0.0);
 
-			// Avoid two layer (ie [][]) array accesses
-			currentTypeSubTopicCounts = typeSubTopicCounts[type];
 
 			// The conditional probability of each super-sub pair is proportional
 			//  to an expression with three parts, one that depends only on the 
@@ -436,15 +471,36 @@ public class PAM4L {
 
 			// Next calculate the sub-only factors
 
-			for (subTopic = 0; subTopic < numSubTopics; subTopic++) {
-				subWeights[subTopic] = ((double) currentTypeSubTopicCounts[subTopic] + beta) / 
-				((double) tokensPerSubTopic[subTopic] + vBeta);
+			if(model == 1)
+			{
+				// Avoid two layer (ie [][]) array accesses
+				for (subTopic = 0; subTopic < numSubTopics; subTopic++) {
+					subWeights[subTopic] = beta_anchor[type][subTopic];
+				}
 			}
+			else if(model == 2)
+			{
+				currentTypeSubTopicCounts = typeSubTopicCounts[type];
+				for (subTopic = 0; subTopic < numSubTopics; subTopic++) {
+					subWeights[subTopic] = ((double) currentTypeSubTopicCounts[subTopic] + beta_anchor[type][subTopic]) / 
+					((double) tokensPerSubTopic[subTopic] + 1);
+				}
+			}
+			else
+			{
+				// Avoid two layer (ie [][]) array accesses
+				currentTypeSubTopicCounts = typeSubTopicCounts[type];
+				for (subTopic = 0; subTopic < numSubTopics; subTopic++) {
+					subWeights[subTopic] = ((double) currentTypeSubTopicCounts[subTopic] + beta) / 
+					((double) tokensPerSubTopic[subTopic] + vBeta);
+				}
+			}		
+			
 
 			// Finally, put them together
 
 			cumulativeWeight = 0.0;
-
+			
 			for (superTopic = 0; superTopic < numSuperTopics; superTopic++) {
 				currentSuperSubWeights = superSubWeights[superTopic];
 				currentSuperSubCounts = superSubCounts[superTopic];
@@ -460,6 +516,17 @@ public class PAM4L {
 				}
 
 				cumulativeSuperWeights[superTopic] = cumulativeWeight;
+			}
+
+			// Save the probability of the SuperTopic and SubTopics
+			// Converting weights to Probabilities
+			if((l2r_evaluator == 1)  && (si == last_word)){
+				for (superTopic = 0; superTopic < numSuperTopics; superTopic++) {
+					for (subTopic = 0; subTopic < numSubTopics; subTopic++) {
+						probSuperSubTopic[superTopic][subTopic] = 
+						superSubWeights[superTopic][subTopic]/cumulativeWeight;
+					}
+				}
 			}
 
 			// Sample a topic assignment from this distribution
@@ -503,16 +570,100 @@ public class PAM4L {
 		//		Update the topic count histograms
 		//		for dirichlet estimation
 
-		for (superTopic = 0; superTopic < numSuperTopics; superTopic++) {
+		if(l2r_evaluator == 0)
+		{
+			for (superTopic = 0; superTopic < numSuperTopics; superTopic++) {
+				superTopicHistograms[superTopic][ superCounts[superTopic] ]++;
+				currentSuperSubCounts = superSubCounts[superTopic];
 
-			superTopicHistograms[superTopic][ superCounts[superTopic] ]++;
-			currentSuperSubCounts = superSubCounts[superTopic];
-
-			for (subTopic = 0; subTopic < numSubTopics; subTopic++) {
-				subTopicHistograms[superTopic][subTopic][ currentSuperSubCounts[subTopic] ]++;
+				for (subTopic = 0; subTopic < numSubTopics; subTopic++) {
+					subTopicHistograms[superTopic][subTopic][ currentSuperSubCounts[subTopic] ]++;
+				}
 			}
 		}
 	}
+
+	public void l2rEvaluatior(Randoms r, PrintWriter oss_ll, int model) {
+		int type;
+		double single_word_mean;
+		double log_likelihood = 0, Single_log_likelihood;
+		int[] currentTypeSubTopicCounts;
+		
+		System.out.println("Left to Right Evaluation to Compute Likelihood");
+
+		// Compute the Likelihood using Left to Right Evaluator 
+		// Iterate through every document
+		
+		// Phi Computation
+		if(model == 1)
+		{
+			// Avoid two layer (ie [][]) array accesses
+			for(type = 0; type < numTypes; type++)
+			{
+				for (int subTopic = 0; subTopic < numSubTopics; subTopic++) {
+					phi[type][subTopic] = beta_anchor[type][subTopic];
+				}
+			}
+		}
+		else if(model == 2)
+		{
+			for(type = 0; type < numTypes; type++)
+			{
+				currentTypeSubTopicCounts = typeSubTopicCounts[type];
+				for (int subTopic = 0; subTopic < numSubTopics; subTopic++) {
+					phi[type][subTopic] = ((double) currentTypeSubTopicCounts[subTopic] + beta_anchor[type][subTopic]) / 
+					((double) tokensPerSubTopic[subTopic] + 1);
+					System.out.println(phi[type][subTopic]);
+				}
+			}
+		}
+		else
+		{
+			// Avoid two layer (ie [][]) array accesses
+			for(type = 0; type < numTypes; type++)
+			{
+				currentTypeSubTopicCounts = typeSubTopicCounts[type];
+				for (int subTopic = 0; subTopic < numSubTopics; subTopic++) {
+					phi[type][subTopic] = ((double) currentTypeSubTopicCounts[subTopic] + beta) / 
+					((double) tokensPerSubTopic[subTopic] + vBeta);
+				}
+			}
+		}		
+
+		for (int di = 0; di < superTopics.length; di++) {
+			int Rsamples = 20;
+			FeatureSequence oneDocTokens = (FeatureSequence)ilist.get(di).getData();
+			int docLen = oneDocTokens.getLength();
+
+			// Iterate through words of a document
+			Single_log_likelihood = 0;
+			for (int si = 0; si < docLen; si++) {
+				type = oneDocTokens.getIndexAtPosition(si);
+
+				// Compute R Samples
+				single_word_mean = 0.0;
+				for (int samples = 0; samples < Rsamples; samples++) {
+					sampleTopicsForOneDoc(oneDocTokens,superTopics[di], subTopics[di], r, si, 1, model);
+					for (int superTopic = 0; superTopic < numSuperTopics; superTopic++) {
+						for (int subTopic = 0; subTopic < numSubTopics; subTopic++) {
+							// Compute p(w_{id}|z_{<id},z^{'}_{<id},\Omega)
+							single_word_mean += phi[type][subTopic] * 
+												probSuperSubTopic[superTopic][subTopic];
+						}
+					}				
+				}
+				
+				single_word_mean = single_word_mean/Rsamples;				
+				Single_log_likelihood += Math.log(single_word_mean);	
+			}
+			log_likelihood += Single_log_likelihood/docLen;
+		}
+		System.out.println(log_likelihood);	
+		oss_ll.println(log_likelihood);
+		oss_ll.flush();
+		System.out.println("Likelihood Computation Done");	
+	}
+	
 
 	public void printWordCounts () {
 		int subTopic, superTopic;
@@ -743,14 +894,15 @@ for (int ti = 0; ti < numTopics; ti++)
 	public static void main (String[] args) throws IOException
 	{
 		InstanceList ilist = InstanceList.load (new File(args[0]));
-		int numIterations = args.length > 1 ? Integer.parseInt(args[1]) : 1000;
+		int numIterations = args.length > 1 ? Integer.parseInt(args[1]) : 300;
 		int numTopWords = args.length > 2 ? Integer.parseInt(args[2]) : 20;
 		int numSuperTopics = args.length > 3 ? Integer.parseInt(args[3]) : 10;
 		int numSubTopics = args.length > 4 ? Integer.parseInt(args[4]) : 10;
 		System.out.println ("Data loaded.");
-		PAM4L pam = new PAM4L (numSuperTopics, numSubTopics);
-		pam.estimate (ilist, numIterations, 50, 0, 50, null, new Randoms());  // should be 1100
-		pam.printTopWords (numTopWords, true);
+
+//		PAM4L pam = new PAM4L (numSuperTopics, numSubTopics, empty);
+//		pam.estimate (ilist, numIterations, 50, 0, 50, null, new Randoms());  // should be 1100
+//		pam.printTopWords (numTopWords, true);
 //		pam.printDocumentTopics (new File(args[0]+".pam"));
 	}
 

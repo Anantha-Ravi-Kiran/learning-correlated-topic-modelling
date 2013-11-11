@@ -106,7 +106,7 @@ void read_beta_input(char* beta_file, float* beta_inp[], int ntopics, int nterms
 	int i,j;
 	float val;
 	FILE *file = fopen(beta_file,"r");
-	int sum;
+	double sum;
 	
 	for(j = 0; j < nterms; j++)
 	{
@@ -120,7 +120,7 @@ void read_beta_input(char* beta_file, float* beta_inp[], int ntopics, int nterms
 		}	
 	}
 	
-	//Renormalizing to remove the zeros
+	//Renormalizing 
 	for(i = 0; i < ntopics; i++)
 	{
 		sum = 0;
@@ -129,15 +129,6 @@ void read_beta_input(char* beta_file, float* beta_inp[], int ntopics, int nterms
 
 		for(j = 0; j < nterms; j++)
 			beta_inp[j][i] = beta_inp[j][i]/sum;
-	}
-	
-	//log_beta
-	for(i = 0; i < ntopics; i++)
-	{
-		for(j = 0; j < nterms; j++)
-		{
-			beta_inp[j][i] = log(beta_inp[j][i]);
-		}
 	}
 	
 	printf("Reading the beta matrix from %s\n", beta_file);
@@ -149,7 +140,7 @@ void read_beta_input(char* beta_file, float* beta_inp[], int ntopics, int nterms
  * Changed : Ravi
  */
 
-llna_model* mom_init(int ntopics, int nterms, char* beta_file)
+llna_model* mom_init(int ntopics, int nterms, char* beta_file, int mom_learn)
 {
     int i, j;
     llna_model* model = new_llna_model(ntopics, nterms);
@@ -157,9 +148,71 @@ llna_model* mom_init(int ntopics, int nterms, char* beta_file)
     long t1;
     (void) time(&t1);
 	float* beta_inp[nterms];
+
+	printf("mom_init\n");
 	
-	model->mom_init = 1;
+	if(mom_learn)	
+		model->mom_init = 0;
+	else
+		model->mom_init = 1;
+		
+	for(i=0; i<nterms; i++)
+	{
+		beta_inp[i] = malloc(ntopics*sizeof(float));
+	}
+
+    // !!! DEBUG
+    // t1 = gsl_rng_set(r, (long) 1115574245);
+    gsl_rng_set(r, t1);
+
+	// Read Beta input
+	read_beta_input(beta_file, beta_inp, ntopics, nterms);
 	
+    for (i = 0; i < ntopics-1; i++)
+    {
+        vset(model->mu, i, 0);
+        mset(model->cov, i, i, 1.0);
+    }
+    matrix_inverse(model->cov, model->inv_cov);
+    model->log_det_inv_cov = log_det(model->inv_cov);
+
+    printf("Topic-word proportions initialized from the Method of moments");
+	for (j = 0; j < nterms; j++)
+	{
+		for (i = 0; i < ntopics; i++)
+		{
+			mset(model->log_beta, i, j, log(beta_inp[j][i]));
+		}
+	}
+
+    gsl_rng_free(r);
+	for(i=0; i<nterms; i++)
+	{
+		free(beta_inp[i]);
+	}
+    return(model);
+}
+
+/*
+ * Beta parameters initialized using Method of Moments
+ * Changed : Ravi
+ */
+
+llna_model* mom_init_noise(int ntopics, int nterms, char* beta_file, float noise_prop)
+{
+    int i, j;
+    llna_model* model = new_llna_model(ntopics, nterms);
+    gsl_rng * r = gsl_rng_alloc(gsl_rng_taus);
+    long t1;
+    (void) time(&t1);
+	float* beta_inp[nterms];
+	double sum = 0;
+	
+	printf("mom_init_noise\n");
+	
+	/* Always learn the parameters after initialization */
+	model->mom_init = 0;
+		
 	for(i=0; i<nterms; i++)
 	{
 		beta_inp[i] = malloc(ntopics*sizeof(float));
@@ -187,9 +240,67 @@ llna_model* mom_init(int ntopics, int nterms, char* beta_file)
 		{
 			mset(model->log_beta, i, j, beta_inp[j][i]);
 		}
-		printf("\n");
 	}
 
+	/*********/	
+	/* Noise */
+	/*********/
+	
+	for (j = 0; j < nterms; j++)
+	{
+		for (i = 0; i < ntopics; i++)
+		{
+            beta_inp[j][i] = gsl_rng_uniform(r) + 1.0/100;
+        }
+    }
+
+	//Renormalizing to remove the zeros
+	for(i = 0; i < ntopics; i++)
+	{
+		sum = 0;
+		for(j = 0; j < nterms; j++)
+			sum += beta_inp[j][i];
+
+		for(j = 0; j < nterms; j++)
+		{
+			beta_inp[j][i] = beta_inp[j][i]/sum;
+		}
+	}
+
+	/*****************************************************************/
+	/* Convex Combination of the A Matrix from the Method of Moments 
+	 * and Noise */
+	/*****************************************************************/ 
+	for (j = 0; j < nterms; j++)
+	{
+		for (i = 0; i < ntopics; i++)
+		{
+			beta_inp[j][i] = (noise_prop*beta_inp[j][i]) + 
+							((1-noise_prop) * mget(model->log_beta, i, j));
+        }
+    }
+
+	//Renormalizing to remove the zeros
+	for(i = 0; i < ntopics; i++)
+	{
+		sum = 0;
+		for(j = 0; j < nterms; j++)
+			sum += beta_inp[j][i];
+
+		for(j = 0; j < nterms; j++)
+		{
+			beta_inp[j][i] = beta_inp[j][i]/sum;
+		}
+	}
+
+	for (j = 0; j < nterms; j++)
+	{
+		for (i = 0; i < ntopics; i++)
+		{
+			mset(model->log_beta, i, j, log(beta_inp[j][i]));
+		}
+	}
+	
     gsl_rng_free(r);
 	for(i=0; i<nterms; i++)
 	{

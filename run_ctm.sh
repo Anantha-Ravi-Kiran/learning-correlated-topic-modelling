@@ -16,6 +16,11 @@ fi
 OUTPUT_FOLDER=$2 
 NUM_OF_TOPICS=$3
 
+
+mkdir -p $OUTPUT_FOLDER/$CORPUS\_$NUM_OF_TOPICS
+
+OUTPUT_FOLDER=$OUTPUT_FOLDER/$CORPUS\_$NUM_OF_TOPICS
+
 for corpus in $CORPUS 
 do
 	echo "Converting the files in the folder to UCI format"
@@ -48,11 +53,13 @@ do
 
 	#Removing stop words and rare words
     echo "preprocessing: removing rare words and stopwords"
-    python ./anchor-word-recovery/truncate_vocabulary.py $OUTPUT_FOLDER/M_$corpus.full_docs.mat $OUTPUT_FOLDER/vocab_$corpus.txt 10
+    python ./anchor-word-recovery/truncate_vocabulary.py $OUTPUT_FOLDER/M_$corpus.full_docs.mat $OUTPUT_FOLDER/vocab_$corpus.txt 25
 
 	# Splitting the input into training and testing data
 	# Produces output for all the modules mallet, scipy for MoM and CTM
 	python ./tools/test_train_split.py $OUTPUT_FOLDER/M_$corpus.full_docs.mat.trunc.mat $OUTPUT_FOLDER/vocab_$corpus.txt.trunc $corpus
+
+	#cp ~/md_prior/input/* $OUTPUT_FOLDER/.
 
 	# Method of Moments
     for loss in L2
@@ -66,23 +73,14 @@ do
 
 	# Correlated Topic Modelling
 	# Training
-	./ctm/ctm est $OUTPUT_FOLDER/$corpus\_train.ctm $NUM_OF_TOPICS seed $OUTPUT_FOLDER/ctm_$NUM_OF_TOPICS ./ctm/settings.txt
-	# Held-out likelihood
-	./ctm/ctm inf $OUTPUT_FOLDER/$corpus\_test.ctm  $OUTPUT_FOLDER/ctm_$NUM_OF_TOPICS/final  $OUTPUT_FOLDER/ctm_$NUM_OF_TOPICS/heldout_test ./ctm/inf-settings.txt
-	# Data likelihood
-	./ctm/ctm inf $OUTPUT_FOLDER/$corpus\_train.ctm  $OUTPUT_FOLDER/ctm_$NUM_OF_TOPICS/final  $OUTPUT_FOLDER/ctm_$NUM_OF_TOPICS/heldout_train ./ctm/inf-settings.txt		
-	# Computing average Likelihood
-	python ./tools/compute_joint_ll.py  $OUTPUT_FOLDER/ctm_$NUM_OF_TOPICS/heldout_test-ctm-lhood.dat > $OUTPUT_FOLDER/ctm_$NUM_OF_TOPICS/likelihood.test
-	python ./tools/compute_joint_ll.py  $OUTPUT_FOLDER/ctm_$NUM_OF_TOPICS/heldout_train-ctm-lhood.dat > $OUTPUT_FOLDER/ctm_$NUM_OF_TOPICS/likelihood.train
-	
+	#./ctm/ctm est $OUTPUT_FOLDER/$corpus\_train.ctm $NUM_OF_TOPICS seed $OUTPUT_FOLDER/ctm_$NUM_OF_TOPICS ./ctm/settings.txt $OUTPUT_FOLDER/$corpus\_test.ctm $OUTPUT_FOLDER/ctm_$NUM_OF_TOPICS/heldout_test ./ctm/inf-settings.txt $OUTPUT_FOLDER/ctm_$NUM_OF_TOPICS/heldout_train
+
 	# MoM-CTM
-	./ctm/ctm est $OUTPUT_FOLDER/$corpus\_train.ctm $NUM_OF_TOPICS mom_init $OUTPUT_FOLDER/mom_ctm_$NUM_OF_TOPICS ./ctm/settings.txt $OUTPUT_FOLDER/demo_$loss\_out.$corpus.$K.A
-	## Held-out likelihood
-	./ctm/ctm inf $OUTPUT_FOLDER/$corpus\_test.ctm  $OUTPUT_FOLDER/mom_ctm_$NUM_OF_TOPICS/final  $OUTPUT_FOLDER/mom_ctm_$NUM_OF_TOPICS/heldout_test ./ctm/inf-settings.txt
-	# Data likelihood
-	./ctm/ctm inf $OUTPUT_FOLDER/$corpus\_train.ctm  $OUTPUT_FOLDER/mom_ctm_$NUM_OF_TOPICS/final  $OUTPUT_FOLDER/mom_ctm_$NUM_OF_TOPICS/heldout_train ./ctm/inf-settings.txt		
-	# Computing average Likelihood
-	python ./tools/compute_joint_ll.py  $OUTPUT_FOLDER/mom_ctm_$NUM_OF_TOPICS/heldout_test-ctm-lhood.dat > $OUTPUT_FOLDER/mom_ctm_$NUM_OF_TOPICS/likelihood.test
-	python ./tools/compute_joint_ll.py  $OUTPUT_FOLDER/mom_ctm_$NUM_OF_TOPICS/heldout_train-ctm-lhood.dat > $OUTPUT_FOLDER/mom_ctm_$NUM_OF_TOPICS/likelihood.train
-	
+	echo ./ctm/ctm est $OUTPUT_FOLDER/$corpus\_train.ctm $NUM_OF_TOPICS mom_init $OUTPUT_FOLDER/mom_ctm_$NUM_OF_TOPICS ./ctm/settings.txt $OUTPUT_FOLDER/demo_$loss\_out.$corpus.$K.A 0 $OUTPUT_FOLDER/$corpus\_test.ctm $OUTPUT_FOLDER/mom_ctm_$NUM_OF_TOPICS/heldout_test ./ctm/inf-settings.txt $OUTPUT_FOLDER/mom_ctm_$NUM_OF_TOPICS/heldout_train
+
+	## MoM-Init-CTM
+	#./ctm/ctm est $OUTPUT_FOLDER/$corpus\_train.ctm $NUM_OF_TOPICS mom_init $OUTPUT_FOLDER/mom_init_ctm_$NUM_OF_TOPICS ./ctm/settings.txt $OUTPUT_FOLDER/demo_$loss\_out.$corpus.$K.A 1  $OUTPUT_FOLDER/$corpus\_test.ctm $OUTPUT_FOLDER/mom_init_ctm_$NUM_OF_TOPICS/heldout_test ./ctm/inf-settings.txt $OUTPUT_FOLDER/mom_init_ctm_$NUM_OF_TOPICS/heldout_train
+
+	##MoM-Init-Noise-CTM
+	#./ctm/ctm est $OUTPUT_FOLDER/$corpus\_train.ctm $NUM_OF_TOPICS mom_init $OUTPUT_FOLDER/mom_init_noise_ctm_$NUM_OF_TOPICS ./ctm/settings.txt $OUTPUT_FOLDER/demo_$loss\_out.$corpus.$K.A 2 0.1  $OUTPUT_FOLDER/$corpus\_test.ctm $OUTPUT_FOLDER/mom_init_noise_ctm_$NUM_OF_TOPICS/heldout_test ./ctm/inf-settings.txt $OUTPUT_FOLDER/mom_init_noise_ctm_$NUM_OF_TOPICS/heldout_train
 done		

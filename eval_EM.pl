@@ -3,7 +3,7 @@ use strict;
 use warnings;
 
 
-die "Usage: $0 alpha_file pi_file num_components num_iterations corpus_name output_folder num_topics input_file\n" if @ARGV < 6;
+die "Usage: $0 alpha_file pi_file num_components num_iterations corpus_name output_folder num_topics input_file A_mat\n" if @ARGV < 7;
 
 my $PARAMS_FILE = $ARGV[0];
 my $WEIGHTS_FILE = $ARGV[1];
@@ -13,17 +13,33 @@ my $corpus = $ARGV[4];
 my $OUTPUT_FOLDER = $ARGV[5];
 my $NUM_TOPICS = $ARGV[6];
 my $INSTANCES = $ARGV[7];
+my $A_MAT = $ARGV[8];
 my $cleanup = 1;
 
 open(IN, $PARAMS_FILE) or die("Could not open parameter file.");
 open(WEIGHTS, $WEIGHTS_FILE) or die("Could not open weights file.");
+open(A_MAT, $A_MAT) or die("Could not open A Matrix file.");
 open (EVAL_OUT, "> $INSTANCES.EM_eval");
 
 my @weights;
 my $w;
 
+my $vocab_size = <A_MAT>;
+
 for (my $iter=0;$iter<$NUM_ITERATIONS;$iter++)
 {
+	my $params = <A_MAT>;
+	open (OUT, ">$OUTPUT_FOLDER/topics_$iter.txt");
+	print OUT $params;
+	for (my $iter1=0;$iter1<($vocab_size-1);$iter1++)
+	{
+		my $params = <A_MAT>;
+		open (OUT, ">>$OUTPUT_FOLDER/topics_$iter.txt");
+		print OUT $params;
+	}
+	close(OUT);
+    `gzip -f $OUTPUT_FOLDER/topics_$iter.txt`;    
+
     for (my $component=0; $component<$NUM_COMPONENTS; $component++)
     {
         #read in component weight
@@ -42,10 +58,10 @@ for (my $iter=0;$iter<$NUM_ITERATIONS;$iter++)
         close(OUT); 
 
         #send file to java code to evaluate the likelihood
-        my $cmd = "./topic-eval/bin/run topics.LDAHeldOut --instances $INSTANCES --num-topics $NUM_TOPICS --parameters $OUTPUT_FOLDER/alpha_$NUM_TOPICS\_$iter\_$component.txt --topics-files $OUTPUT_FOLDER/topics_$corpus\_$NUM_TOPICS.txt.gz --beta 0.01 --doc-limit 100 ";
+        my $cmd = "./topic-eval/bin/run topics.LDAHeldOut --instances $INSTANCES --num-topics $NUM_TOPICS --parameters $OUTPUT_FOLDER/alpha_$NUM_TOPICS\_$iter\_$component.txt --topics-files $OUTPUT_FOLDER/topics_$iter.txt.gz --beta 0.01 --doc-limit 100 ";
         `$cmd`;
 
-        `mv $OUTPUT_FOLDER/topics_$corpus\_$NUM_TOPICS.txt.gz.heldout $OUTPUT_FOLDER/topics_$NUM_TOPICS\_$iter\_$component.txt.gz.heldout`;
+        `mv  $OUTPUT_FOLDER/topics_$iter.txt.gz.heldout $OUTPUT_FOLDER/topics_$iter\_$component.txt.gz.heldout`;
 
         #cleanup
         if($cleanup)
@@ -54,9 +70,14 @@ for (my $iter=0;$iter<$NUM_ITERATIONS;$iter++)
         }
     }
 
+	if($cleanup)
+	{
+		`rm $OUTPUT_FOLDER/topics_$iter.txt.gz`;
+	}
+	
     #do averaging
     #paste together evaluation files
-    my $cmd = "paste $OUTPUT_FOLDER/topics_$NUM_TOPICS\_$iter\_*.txt.gz.heldout | cut -f ";
+    my $cmd = "paste $OUTPUT_FOLDER/topics_$iter\_*.txt.gz.heldout | cut -f ";
     $cmd .= " 2,";
     for (my $component=0; $component<$NUM_COMPONENTS; $component++)
     {
@@ -69,7 +90,7 @@ for (my $iter=0;$iter<$NUM_ITERATIONS;$iter++)
     #cleanup individual evaluation files
     if($cleanup)
     {
-        `rm $OUTPUT_FOLDER/topics_$NUM_TOPICS\_$iter\_*.txt.gz.heldout`;
+        `rm $OUTPUT_FOLDER/topics_$iter\_*.txt.gz.heldout`;
     }
     
     #each line evaluates a document
